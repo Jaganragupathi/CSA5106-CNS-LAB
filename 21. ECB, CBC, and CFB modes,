@@ -1,0 +1,76 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#define BLOCK_SIZE 8
+void xor_encrypt(uint8_t *block, uint8_t *key) {
+    for (int i = 0; i < BLOCK_SIZE; i++) {
+        block[i] ^= key[i];
+    }
+}
+int pad_data(uint8_t *data, int len) {
+    int pad_len = BLOCK_SIZE - (len % BLOCK_SIZE);
+    data[len] = 0x80;
+    for (int i = 1; i < pad_len; i++) {
+        data[len + i] = 0x00;
+    }
+    return len + pad_len;
+}
+void print_hex(uint8_t *data, int len) {
+    for (int i = 0; i < len; i++)
+        printf("%02X ", data[i]);
+    printf("\n");
+}
+void ECB_mode(uint8_t *data, int len, uint8_t *key) {
+    printf("\nECB Mode:\nCiphertext: ");
+    for (int i = 0; i < len; i += BLOCK_SIZE) {
+        xor_encrypt(&data[i], key);
+        print_hex(&data[i], BLOCK_SIZE);
+    }
+}
+void CBC_mode(uint8_t *data, int len, uint8_t *key, uint8_t *iv) {
+    printf("\nCBC Mode:\nCiphertext: ");
+    uint8_t prev[BLOCK_SIZE];
+    memcpy(prev, iv, BLOCK_SIZE);
+    for (int i = 0; i < len; i += BLOCK_SIZE) {
+        for (int j = 0; j < BLOCK_SIZE; j++)
+            data[i + j] ^= prev[j];
+        xor_encrypt(&data[i], key);
+        memcpy(prev, &data[i], BLOCK_SIZE);
+        print_hex(&data[i], BLOCK_SIZE);
+    }
+}
+void CFB_mode(uint8_t *data, int len, uint8_t *key, uint8_t *iv) {
+    printf("\nCFB Mode:\nCiphertext: ");
+    uint8_t feedback[BLOCK_SIZE];
+    memcpy(feedback, iv, BLOCK_SIZE);
+    for (int i = 0; i < len; i += BLOCK_SIZE) {
+        uint8_t temp[BLOCK_SIZE];
+        memcpy(temp, feedback, BLOCK_SIZE);
+        xor_encrypt(temp, key); // Encrypt feedback
+        for (int j = 0; j < BLOCK_SIZE; j++) {
+            feedback[j] = temp[j] ^ data[i + j];
+            data[i + j] = feedback[j]; // Ciphertext
+        }
+        print_hex(&data[i], BLOCK_SIZE);
+    }
+}
+int main() {
+    char input[256];
+    uint8_t key[BLOCK_SIZE] = {0x1A, 0x2B, 0x3C, 0x4D, 0x5E, 0x6F, 0x70, 0x81};
+    uint8_t iv[BLOCK_SIZE]  = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77};
+    printf("Enter plaintext (max 248 chars): ");
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = '\0'; // Remove newline
+    int len = strlen(input);
+    uint8_t buffer1[256], buffer2[256], buffer3[256];
+    memcpy(buffer1, input, len);
+    memcpy(buffer2, input, len);
+    memcpy(buffer3, input, len);
+    len = pad_data(buffer1, len);
+    pad_data(buffer2, strlen(input));
+    pad_data(buffer3, strlen(input));
+    ECB_mode(buffer1, len, key);
+    CBC_mode(buffer2, len, key, iv);
+    CFB_mode(buffer3, len, key, iv);
+    return 0;
+}
