@@ -1,0 +1,100 @@
+#include <stdio.h>
+#include <stdint.h>
+
+uint8_t IP(uint8_t in) {
+    return ((in & 0x80) >> 0) | ((in & 0x40) >> 2) | ((in & 0x20) >> 2) | ((in & 0x10) >> 2) |
+           ((in & 0x08) << 2) | ((in & 0x04) << 2) | ((in & 0x02) << 2) | ((in & 0x01) << 0);
+}
+
+uint8_t IP_inv(uint8_t in) {
+    return ((in & 0x80) >> 0) | ((in & 0x20) >> 2) | ((in & 0x08) << 2) | ((in & 0x02) << 2) |
+           ((in & 0x40) >> 2) | ((in & 0x10) << 2) | ((in & 0x04) << 2) | ((in & 0x01) << 0);
+}
+
+uint8_t expand(uint8_t half) {
+    return ((half & 0x08) << 3) | ((half & 0x04) << 2) | ((half & 0x02) << 1) | ((half & 0x01) << 0) |
+           ((half & 0x01) << 4) | ((half & 0x02) << 5) | ((half & 0x04) << 6) | ((half & 0x08) >> 0);
+}
+
+uint8_t sbox(uint8_t in, int box) {
+    uint8_t s0[4][4] = { {1,0,3,2}, {3,2,1,0}, {0,2,1,3}, {3,1,3,2} };
+    uint8_t s1[4][4] = { {0,1,2,3}, {2,0,1,3}, {3,0,1,0}, {2,1,0,3} };
+    int row = ((in & 0x08) >> 2) | (in & 0x01);
+    int col = (in & 0x06) >> 1;
+    return box == 0 ? s0[row][col] : s1[row][col];
+}
+
+uint8_t fk(uint8_t in, uint8_t sk) {
+    uint8_t l = in >> 4, r = in & 0x0F;
+    uint8_t er = expand(r);
+    uint8_t x = er ^ sk;
+    uint8_t s0o = sbox((x >> 4) & 0x0F, 0);
+    uint8_t s1o = sbox(x & 0x0F, 1);
+    uint8_t f = ((s0o << 2) | s1o) ^ l;
+    return (f << 4) | r;
+}
+
+uint8_t switch_half(uint8_t in) {
+    return (in << 4) | (in >> 4);
+}
+
+void key_gen(uint16_t key, uint8_t *k1, uint8_t *k2) {
+    *k1 = ((key >> 1) & 0xFF);
+    *k2 = ((key >> 2) & 0xFF);
+}
+
+uint8_t sdes_encrypt(uint8_t in, uint8_t k1, uint8_t k2) {
+    uint8_t ip = IP(in);
+    uint8_t fk1 = fk(ip, k1);
+    uint8_t sw = switch_half(fk1);
+    uint8_t fk2 = fk(sw, k2);
+    return IP_inv(fk2);
+}
+
+uint8_t sdes_decrypt(uint8_t in, uint8_t k1, uint8_t k2) {
+    uint8_t ip = IP(in);
+    uint8_t fk1 = fk(ip, k2);
+    uint8_t sw = switch_half(fk1);
+    uint8_t fk2 = fk(sw, k1);
+    return IP_inv(fk2);
+}
+
+void CBC_encrypt(uint8_t *pt, uint8_t *ct, int blocks, uint8_t iv, uint8_t k1, uint8_t k2) {
+    for (int i = 0; i < blocks; i++) {
+        pt[i] ^= iv;
+        ct[i] = sdes_encrypt(pt[i], k1, k2);
+        iv = ct[i];
+    }
+}
+
+void CBC_decrypt(uint8_t *ct, uint8_t *pt, int blocks, uint8_t iv, uint8_t k1, uint8_t k2) {
+    for (int i = 0; i < blocks; i++) {
+        uint8_t temp = sdes_decrypt(ct[i], k1, k2);
+        pt[i] = temp ^ iv;
+        iv = ct[i];
+    }
+}
+
+void print_bin(uint8_t val) {
+    for (int i = 7; i >= 0; i--)
+        printf("%d", (val >> i) & 1);
+    printf(" ");
+}
+
+int main() {
+    uint16_t key = 0x1FD;
+    uint8_t iv = 0xAA;
+    uint8_t pt[2] = {0x01, 0x23};
+    uint8_t ct[2], dt[2];
+    uint8_t k1, k2;
+    key_gen(key, &k1, &k2);
+
+    CBC_encrypt(pt, ct, 2, iv, k1, k2);
+    CBC_decrypt(ct, dt, 2, iv, k1, k2);
+
+    printf("Ciphertext: ");
+    print_bin(ct[0]); print_bin(ct[1]);
+    printf("\nDecrypted : ");
+    print_bin(dt[0]); print_bin(dt[1]);
+    return 0;
+}
